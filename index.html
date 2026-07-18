@@ -1,0 +1,184 @@
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Boîte Mail</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📬</text></svg>">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body class="with-demo-banner">
+
+<!-- bandeau d'information -->
+<div id="demo-banner">
+  <span>📬 <b>Boîte Mail en ligne</b> — vraie connexion IMAP/SMTP.
+  Identifiants chiffrés dans ton navigateur, jamais stockés sur le serveur.</span>
+</div>
+
+<!-- ============================== ÉCRAN DE CONNEXION -->
+<div id="login-screen" class="screen">
+  <div class="login-card">
+    <div class="logo">📬</div>
+    <h1>Boîte Mail</h1>
+    <p class="subtitle">Ton client mail local — IMAP &amp; SMTP</p>
+
+    <label>Fournisseur</label>
+    <select id="provider"></select>
+    <p id="provider-note" class="note hidden"></p>
+
+    <label>Adresse e-mail</label>
+    <input id="email" type="email" placeholder="toi@exemple.fr" autocomplete="off">
+
+    <label>Mot de passe</label>
+    <input id="password" type="password" placeholder="••••••••••">
+    <p id="saved-pass-note" class="note hidden">Un mot de passe enregistré sera utilisé si tu laisses ce champ vide.</p>
+
+    <details id="advanced">
+      <summary>Paramètres serveurs (avancé)</summary>
+      <div class="grid2">
+        <div><label>Serveur IMAP</label><input id="imap_host" placeholder="imap.exemple.fr"></div>
+        <div><label>Port IMAP</label><input id="imap_port" type="number" value="993"></div>
+        <div><label>Serveur SMTP</label><input id="smtp_host" placeholder="smtp.exemple.fr"></div>
+        <div><label>Port SMTP</label><input id="smtp_port" type="number" value="465"></div>
+      </div>
+      <label class="checkline"><input id="smtp_ssl" type="checkbox" checked> SMTP en SSL direct (décocher pour STARTTLS, port 587)</label>
+    </details>
+
+    <label class="checkline"><input id="remember" type="checkbox" checked> Se souvenir du mot de passe sur ce PC</label>
+
+    <button id="btn-connect" class="primary">Se connecter</button>
+    <div class="or-sep"><span>ou</span></div>
+    <button id="btn-google" class="google-btn">
+      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.7 2.4 30.2 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.9 6.2C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.7 6c4.5-4.2 6.9-10.3 6.9-17.7z"/><path fill="#FBBC05" d="M10.5 28.6c-.5-1.5-.8-3-.8-4.6s.3-3.1.8-4.6l-7.9-6.2C.9 16.5 0 20.1 0 24s.9 7.5 2.6 10.8l7.9-6.2z"/><path fill="#34A853" d="M24 48c6.2 0 11.4-2 15.2-5.6l-7.7-6c-2.1 1.4-4.8 2.3-7.5 2.3-6.3 0-11.6-4.1-13.5-9.9l-7.9 6.2C6.5 42.6 14.6 48 24 48z"/></svg>
+      Se connecter avec Google — mot de passe habituel
+    </button>
+    <p id="login-error" class="error hidden"></p>
+  </div>
+</div>
+
+<!-- ============================== ÉCRAN PRINCIPAL -->
+<div id="main-screen" class="screen hidden">
+  <aside id="sidebar">
+    <div class="account">
+      <div class="avatar" id="avatar">?</div>
+      <div class="account-mail" id="account-mail"></div>
+    </div>
+    <button id="btn-compose" class="primary">✏️ Nouveau message</button>
+    <div class="folders-head">
+      <span>Dossiers</span>
+      <button id="btn-new-folder" class="ghost small" title="Créer un dossier">＋</button>
+    </div>
+    <nav id="folder-list"></nav>
+    <p class="hint">Clic droit sur un dossier : renommer / supprimer</p>
+    <div class="sidebar-foot">
+      <button id="btn-settings" class="ghost">⚙️ Paramètres</button>
+      <button id="btn-refresh" class="ghost">🔄 Actualiser</button>
+      <button id="btn-logout" class="ghost">⏻ Déconnexion</button>
+    </div>
+  </aside>
+
+  <section id="message-list-pane">
+    <header id="list-header">
+      <span id="folder-title">…</span>
+      <span id="offline-badge" class="badge off hidden" title="Affichage du cache local — clique sur Actualiser pour te reconnecter">📴 Hors ligne</span>
+      <span id="autoreply-badge" class="badge hidden" title="Réponse automatique active">🤖 Rép. auto</span>
+    </header>
+    <div class="searchbar">
+      <input id="search" placeholder="🔍 Rechercher (expéditeur, objet, texte)…">
+      <button id="btn-search-clear" class="ghost small hidden" title="Effacer">✕</button>
+    </div>
+    <div id="message-list"></div>
+    <button id="btn-more" class="ghost hidden">Charger plus de messages…</button>
+  </section>
+
+  <section id="reader-pane">
+    <div id="reader-empty" class="reader-empty">Sélectionne un message pour le lire 📖</div>
+    <div id="reader" class="hidden">
+      <header id="reader-head">
+        <div class="subject-row">
+          <h2 id="msg-subject"></h2>
+          <button id="btn-star" class="star" title="Étoile">☆</button>
+        </div>
+        <div class="msg-meta">
+          <span id="msg-from"></span>
+          <span id="msg-date"></span>
+        </div>
+        <div class="msg-meta small" id="msg-to"></div>
+        <div id="msg-attachments" class="attachments hidden"></div>
+        <div class="reader-actions">
+          <button id="btn-reply" class="secondary">↩️ Répondre</button>
+          <button id="btn-forward" class="secondary">➡️ Transférer</button>
+          <button id="btn-archive" class="secondary">🗄️ Archiver</button>
+          <button id="btn-unread" class="secondary">✉️ Non lu</button>
+          <select id="move-select" title="Déplacer vers…"><option value="">📁 Déplacer vers…</option></select>
+          <button id="btn-delete" class="danger">🗑️</button>
+        </div>
+      </header>
+      <iframe id="msg-body" sandbox="allow-same-origin" referrerpolicy="no-referrer"></iframe>
+    </div>
+  </section>
+</div>
+
+<!-- ============================== FENÊTRE DE RÉDACTION -->
+<div id="compose-overlay" class="overlay hidden">
+  <div class="compose-card">
+    <header>
+      <span id="compose-title">Nouveau message</span>
+      <button id="btn-compose-close" class="ghost">✕</button>
+    </header>
+    <input id="c-to" placeholder="À : destinataire@exemple.fr">
+    <input id="c-cc" placeholder="Cc (optionnel)">
+    <input id="c-subject" placeholder="Objet">
+    <textarea id="c-body" placeholder="Écris ton message…"></textarea>
+    <div id="c-attachments" class="attachments"></div>
+    <p class="drop-hint">💡 Tu peux aussi glisser-déposer des fichiers ici pour les joindre.</p>
+    <footer>
+      <button id="btn-attach" class="secondary">📎 Joindre</button>
+      <button id="btn-draft" class="secondary">💾 Brouillon</button>
+      <p id="compose-error" class="error hidden"></p>
+      <button id="btn-send" class="primary">📤 Envoyer</button>
+    </footer>
+  </div>
+</div>
+
+<!-- ============================== PARAMÈTRES -->
+<div id="settings-overlay" class="overlay hidden">
+  <div class="compose-card">
+    <header>
+      <span>⚙️ Paramètres</span>
+      <button id="btn-settings-close" class="ghost">✕</button>
+    </header>
+
+    <label>Signature (ajoutée à la fin de tes messages)</label>
+    <textarea id="s-signature" class="short" placeholder="Antoine&#10;06 12 34 56 78"></textarea>
+
+    <label class="checkline big"><input id="s-ar-enabled" type="checkbox"> 🤖 Réponse automatique (répondeur d'absence)</label>
+    <div id="ar-fields">
+      <label>Objet de la réponse (vide = « Re: » + objet reçu)</label>
+      <input id="s-ar-subject" placeholder="Absent jusqu'au 25 juillet">
+      <label>Message de réponse</label>
+      <textarea id="s-ar-body" class="short"></textarea>
+      <p class="note">💻 Le répondeur automatique est disponible dans
+      l'application de bureau Boîte Mail :
+      il doit tourner en continu, ce que la page web ne peut pas garantir.
+      La signature, elle, fonctionne ici.</p>
+    </div>
+
+    <footer>
+      <button id="btn-settings-save" class="primary">Enregistrer</button>
+    </footer>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+<div id="busy" class="busy hidden"><div class="spinner"></div></div>
+
+<!-- menu contextuel dossier -->
+<div id="folder-menu" class="ctx-menu hidden">
+  <button id="ctx-rename">✏️ Renommer</button>
+  <button id="ctx-delete" class="ctx-danger">🗑️ Supprimer</button>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
