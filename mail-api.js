@@ -397,9 +397,14 @@ router.post("/disconnect", handler(false, async (_s, _b, req) => {
 // --------------------------------------------------------------- OAuth Google
 
 function baseUrl(req) {
-  const url = process.env.APP_URL;
-  if (url) return url.replace(/\/$/, "");
-  return `${req.get("x-forwarded-proto") || "http"}://${req.get("host")}`;
+  const host = req.get("host") || "";
+  // APP_URL (ex. https://xomail.vercel.app) fixe l'URL publique pour OAuth —
+  // ignorée en local pour que le retour Google revienne bien sur localhost
+  if (process.env.APP_URL && !/^(localhost|127\.)/.test(host)) {
+    return process.env.APP_URL.replace(/\/+$/, "");
+  }
+  const proto = req.get("x-forwarded-proto") || req.protocol || "http";
+  return `${proto}://${host}`;
 }
 
 router.get("/oauth/google/start", (req, res) => {
@@ -420,7 +425,7 @@ router.get("/oauth/google/start", (req, res) => {
 });
 
 router.get("/oauth/google/callback", async (req, res) => {
-  const fail = (msg) => res.redirect(baseUrl(req) + "/#oauth_error=" + encodeURIComponent(msg));
+  const fail = (msg) => res.redirect("/#oauth_error=" + encodeURIComponent(msg));
   try {
     if (req.query.error) return fail("Google a refusé : " + req.query.error);
     const state = openSealed(req.query.state);
@@ -451,13 +456,7 @@ router.get("/oauth/google/callback", async (req, res) => {
     sessions.set(token, session);
     await listFolders(session);
     // jeton transmis dans le fragment (#…) : jamais envoyé au serveur ni journalisé
-    res.redirect(
-    baseUrl(req) +
-    "/#gm=" +
-    encodeURIComponent(token) +
-    "&em=" +
-    encodeURIComponent(email)
-);
+    res.redirect("/#gm=" + encodeURIComponent(token) + "&em=" + encodeURIComponent(email));
   } catch (error) {
     console.error("[mail] OAuth Google :", (error && error.message) || error);
     fail(friendly(error));
@@ -610,16 +609,50 @@ router.post("/delete_message", handler(true, async (session, body) => {
   return { ok: true, how: "expunged" };
 }));
 
-function buildAttachments(list) {
-  const out = [];
-  for (const a of list || []) {
+// ---------------------------------------------------------------------------
+// Pièces jointes → liens Gofile : les fichiers sont téléversés sur Gofile et
+// le mail contient les liens de téléchargement (jamais de fichier en MIME —
+// évite aussi les blocages Gmail sur les .exe/.zip).
+// GOFILE_API_TOKEN (env) : jetons du compte Gofile ; sans jeton, l'envoi se
+// fait en invité (compte guest créé par Gofile à la volée).
+// ---------------------------------------------------------------------------
+const GOFILE_TOKEN = process.env.GOFILE_API_TOKEN || "";
+
+function fmtSize(bytes) {
+  if (bytes > 1048576) return (bytes / 1048576).toFixed(1) + " Mo";
+  if (bytes > 1024) return Math.round(bytes / 1024) + " Ko";
+  return bytes + " o";
+}
+
+async function uploadToGofile(name, content) {
+  const form = new FormData();
+  form.append("file", new Blob([content]), name || "fichier");
+  const headers = {};
+  if (GOFILE_TOKEN) headers.Authorization = "Bearer " + GOFILE_TOKEN;
+  const res = await fetch("https://upload.gofile.io/uploadfile",
+                          { method: "POST", headers, body: form });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data || data.status !== "ok" || !data.data || !data.data.downloadPage) {
+    throw new Error("Gofile : téléversement échoué ("
+      + ((data && data.status) || res.status) + ")");
+  }
+  return data.data.downloadPage;
+}
+
+/** Téléverse chaque pièce jointe sur Gofile ; retourne le bloc de texte à
+ *  ajouter au corps du mail (ou "" si aucune). */
+async function attachmentsToLinks(list) {
+  if (!list || !list.length) return "";
+  const lines = [];
+  for (const a of list) {
     const content = Buffer.from(a.b64 || "", "base64");
     if (content.length > MAX_ATTACH_MB * 1024 * 1024) {
       throw new Error(`Pièce jointe trop lourde (max ${MAX_ATTACH_MB} Mo) : ${a.name}`);
     }
-    out.push({ filename: a.name || "fichier", content });
+    const link = await uploadToGofile(a.name, content);
+    lines.push(`• ${a.name || "fichier"} (${fmtSize(content.length)}) : ${link}`);
   }
-  return out;
+  return "\n\n— Pièces jointes (liens de téléchargement) —\n" + lines.join("\n");
 }
 
 router.post("/send_message", handler(true, async (session, body) => {
@@ -637,12 +670,13 @@ router.post("/send_message", handler(true, async (session, body) => {
     auth,
     connectionTimeout: 30000,
   });
+  // fichiers → liens Gofile ajoutés au corps ; aucun fichier joint en MIME
+  const linksBlock = await attachmentsToLinks(body.attachments);
   const mail = {
     from: config.email, to: body.to, cc: body.cc || undefined,
-    subject: body.subject || "", text: body.body || "",
+    subject: body.subject || "", text: (body.body || "") + linksBlock,
     inReplyTo: body.in_reply_to || undefined,
     references: body.in_reply_to || undefined,
-    attachments: buildAttachments(body.attachments),
   };
   await transport.sendMail(mail);
   transport.close();

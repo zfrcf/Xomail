@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<title>Boîte Mail</title>
+<title>Xomail</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📬</text></svg>">
 <link rel="stylesheet" href="/style.css">
 </head>
@@ -10,7 +10,7 @@
 
 <!-- bandeau d'information -->
 <div id="demo-banner">
-  <span>📬 <b>Boîte Mail en ligne</b> — vraie connexion IMAP/SMTP.
+  <span>📬 <b>Xomail</b> — vraie connexion IMAP/SMTP.
   Identifiants chiffrés dans ton navigateur, jamais stockés sur le serveur.</span>
 </div>
 
@@ -18,8 +18,8 @@
 <div id="login-screen" class="screen">
   <div class="login-card">
     <div class="logo">📬</div>
-    <h1>Boîte Mail</h1>
-    <p class="subtitle">Ton client mail local — IMAP &amp; SMTP</p>
+    <h1>Xomail</h1>
+    <p class="subtitle">Ta boîte mail en ligne — IMAP &amp; SMTP</p>
 
     <label>Fournisseur</label>
     <select id="provider"></select>
@@ -58,10 +58,12 @@
 <!-- ============================== ÉCRAN PRINCIPAL -->
 <div id="main-screen" class="screen hidden">
   <aside id="sidebar">
-    <div class="account">
+    <div class="account clickable" id="account-btn" title="Changer de compte">
       <div class="avatar" id="avatar">?</div>
       <div class="account-mail" id="account-mail"></div>
+      <span class="acc-caret">▾</span>
     </div>
+    <div id="account-menu" class="ctx-menu hidden"></div>
     <button id="btn-compose" class="primary">✏️ Nouveau message</button>
     <div class="folders-head">
       <span>Dossiers</span>
@@ -130,7 +132,7 @@
     <input id="c-subject" placeholder="Objet">
     <textarea id="c-body" placeholder="Écris ton message…"></textarea>
     <div id="c-attachments" class="attachments"></div>
-    <p class="drop-hint">💡 Tu peux aussi glisser-déposer des fichiers ici pour les joindre.</p>
+    <p class="drop-hint">💡 Glisse-dépose tes fichiers ici. Ils seront envoyés en <b>liens de téléchargement Gofile</b> (jamais bloqués par Gmail), pas en fichiers joints.</p>
     <footer>
       <button id="btn-attach" class="secondary">📎 Joindre</button>
       <button id="btn-draft" class="secondary">💾 Brouillon</button>

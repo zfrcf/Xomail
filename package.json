@@ -1,7 +1,7 @@
 {
-  "name": "boite-mail-webmail",
-  "version": "1.0.0",
-  "description": "Boîte Mail en ligne — webmail IMAP/SMTP (Express, imapflow, nodemailer)",
+  "name": "xomail",
+  "version": "1.1.0",
+  "description": "Xomail — webmail IMAP/SMTP multi-comptes (Express, imapflow, nodemailer), pièces jointes en liens Gofile",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

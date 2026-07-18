@@ -18,10 +18,14 @@ let online = false;         // connecté au serveur (sinon : cache local)
 
 /* ------------------------------------------------------------- pont serveur */
 
-let TOKEN = sessionStorage.getItem("bm_token") || "";
+let TOKEN = "";
 
-const LS_CONFIG = "bm_config";     // config du compte (localStorage, comme l'app)
+const LS_ACCOUNTS = "xm_accounts"; // [{email, provider_id, imap…, password_b64?, google_oauth?}]
+const LS_ACTIVE = "xm_active";     // e-mail du compte actif
 const LS_SETTINGS = "bm_settings"; // signature
+const SS_TOKENS = "xm_tokens";     // jetons de session par compte (sessionStorage)
+
+let activeEmail = localStorage.getItem(LS_ACTIVE) || "";
 
 function lsGet(key) {
   try { return JSON.parse(localStorage.getItem(key) || "null"); }
@@ -29,12 +33,64 @@ function lsGet(key) {
 }
 function lsSet(key, value) { localStorage.setItem(key, JSON.stringify(value)); }
 
-function sessionExpired() {
-  TOKEN = "";
+/* ----- comptes ----- */
+
+function accounts() { return lsGet(LS_ACCOUNTS) || []; }
+
+function getAccount(email) { return accounts().find((a) => a.email === email); }
+
+function upsertAccount(entry) {
+  const list = accounts();
+  const i = list.findIndex((a) => a.email === entry.email);
+  if (i >= 0) list[i] = { ...list[i], ...entry };
+  else list.push(entry);
+  lsSet(LS_ACCOUNTS, list);
+}
+
+function removeAccount(email) {
+  lsSet(LS_ACCOUNTS, accounts().filter((a) => a.email !== email));
+}
+
+function setActive(email) {
+  activeEmail = email;
+  localStorage.setItem(LS_ACTIVE, email);
+}
+
+/* ----- jetons de session (un par compte, le temps de l'onglet) ----- */
+
+function tokens() {
+  try { return JSON.parse(sessionStorage.getItem(SS_TOKENS) || "{}"); }
+  catch { return {}; }
+}
+
+function setTokenFor(email, token) {
+  const t = tokens();
+  if (token) t[email] = token; else delete t[email];
+  sessionStorage.setItem(SS_TOKENS, JSON.stringify(t));
+  TOKEN = token || "";
+}
+
+/* migration depuis l'ancien format mono-compte */
+(function migrate() {
+  const old = lsGet("bm_config");
+  if (old && old.email && !getAccount(old.email)) {
+    upsertAccount(old);
+    if (!activeEmail) setActive(old.email);
+  }
+  localStorage.removeItem("bm_config");
+  const oldTok = sessionStorage.getItem("bm_token");
+  if (oldTok && activeEmail) setTokenFor(activeEmail, oldTok);
   sessionStorage.removeItem("bm_token");
+})();
+
+function sessionExpired() {
+  if (activeEmail) setTokenFor(activeEmail, "");
+  TOKEN = "";
   setOnline(false);
   hide($("main-screen"));
   show($("login-screen"));
+  const acc = getAccount(activeEmail);
+  if (acc) prefillLogin(acc);
 }
 
 async function rpc(method, payload) {
@@ -56,44 +112,38 @@ async function rpc(method, payload) {
 
 /* méthodes servies localement (pas de cache hors ligne ni répondeur sur le web) */
 const LOCAL = {
-  get_saved_config: async () => {
-    const stored = lsGet(LS_CONFIG);
-    if (!stored) return { ok: true, config: null };
-    const config = { ...stored, has_password: !!stored.password_b64, has_cache: false };
-    delete config.password_b64;
-    return { ok: true, config };
-  },
   open_offline: async () => ({ ok: false, error: "Pas de mode hors ligne sur le web" }),
   reconnect: async () => {
-    const stored = lsGet(LS_CONFIG);
-    if (!stored || !stored.password_b64) {
+    const acc = getAccount(activeEmail);
+    if (!acc || !acc.password_b64) {
       return { ok: false, error: "Pas de mot de passe enregistré" };
     }
-    return LOCAL.connect({ ...stored }, true, true);
+    return LOCAL.connect({ ...acc }, true, true);
   },
   is_online: async () => ({ ok: true, online }),
   connect: async (config, remember, useSaved) => {
-    const stored = lsGet(LS_CONFIG);
+    const stored = getAccount(config.email);
     if ((useSaved || !config.password) && stored && stored.password_b64) {
       config = { ...config, password: atob(stored.password_b64) };
     }
     const res = await rpc("connect", { config });
     if (res.ok) {
-      TOKEN = res.token;
-      sessionStorage.setItem("bm_token", TOKEN);
       const keep = { ...config };
       delete keep.password;
       delete keep.password_b64;
       if (remember && config.password) keep.password_b64 = btoa(config.password);
-      lsSet(LS_CONFIG, keep);
+      else if (stored && stored.password_b64) keep.password_b64 = stored.password_b64;
+      upsertAccount(keep);
+      setActive(config.email);
+      setTokenFor(config.email, res.token);
     }
     return res;
   },
   disconnect: async (forget) => {
     await rpc("disconnect", {});
+    if (activeEmail) setTokenFor(activeEmail, "");
     TOKEN = "";
-    sessionStorage.removeItem("bm_token");
-    if (forget) localStorage.removeItem(LS_CONFIG);
+    if (forget && activeEmail) removeAccount(activeEmail);
     return { ok: true };
   },
   get_settings: async () => {
@@ -229,28 +279,62 @@ async function initLogin() {
   };
   if (PROVIDERS.length) fillProviderFields(PROVIDERS[0]);
 
-  const saved = await call("get_saved_config");
-  if (saved.config) {
-    const c = saved.config;
-    $("email").value = c.email || "";
-    if (c.provider_id) { sel.value = c.provider_id; }
-    $("imap_host").value = c.imap_host || "";
-    $("imap_port").value = c.imap_port || 993;
-    $("smtp_host").value = c.smtp_host || "";
-    $("smtp_port").value = c.smtp_port || 465;
-    $("smtp_ssl").checked = c.smtp_ssl !== false;
-    if (c.has_password) show($("saved-pass-note"));
-    // cache local disponible → ouvrir tout de suite hors ligne,
-    // puis se connecter en arrière-plan
-    if (c.has_password && c.has_cache) {
-      const off = await call("open_offline");
-      if (off.ok) {
-        setOnline(false);
-        enterMailbox(off.email, off.folders);
-        tryReconnect(true);
-      }
+  // reprise automatique du compte actif (jeton d'onglet, sinon mot de passe
+  // enregistré) ; sinon simple préremplissage du formulaire
+  const acc = getAccount(activeEmail) || accounts()[0];
+  if (acc) {
+    prefillLogin(acc);
+    await tryActivate(acc.email, true);
+  }
+}
+
+/* préremplit le formulaire de connexion avec un compte connu */
+function prefillLogin(acc) {
+  $("email").value = acc.email || "";
+  if (acc.provider_id) $("provider").value = acc.provider_id;
+  $("imap_host").value = acc.imap_host || "";
+  $("imap_port").value = acc.imap_port || 993;
+  $("smtp_host").value = acc.smtp_host || "";
+  $("smtp_port").value = acc.smtp_port || 465;
+  $("smtp_ssl").checked = acc.smtp_ssl !== false;
+  $("password").value = "";
+  if (acc.password_b64) show($("saved-pass-note")); else hide($("saved-pass-note"));
+}
+
+/* active un compte : jeton d'onglet → mot de passe enregistré → formulaire */
+async function tryActivate(email, silent) {
+  const acc = getAccount(email);
+  if (!acc) return false;
+  setActive(email);
+  const tok = tokens()[email];
+  if (tok) {
+    TOKEN = tok;
+    const res = await rpc("list_folders", {});
+    if (res.ok) {
+      setOnline(true);
+      enterMailbox(email, res.folders);
+      return true;
     }
   }
+  if (acc.password_b64) {
+    if (!silent) busy(true);
+    const res = await call("connect", { ...acc }, true, true);
+    if (!silent) busy(false);
+    if (res.ok) {
+      setOnline(true);
+      enterMailbox(res.email, res.folders);
+      return true;
+    }
+    if (!silent) toast(res.error, "err");
+  }
+  // pas de session possible sans action de l'utilisateur → formulaire prérempli
+  hide($("main-screen"));
+  show($("login-screen"));
+  prefillLogin(acc);
+  if (acc.google_oauth && !silent) {
+    toast("Reconnecte ce compte avec le bouton Google 👇", "err");
+  }
+  return false;
 }
 
 function setOnline(on) {
@@ -315,9 +399,55 @@ function enterMailbox(mail, folders) {
   show($("main-screen"));
   $("account-mail").textContent = mail;
   $("avatar").textContent = (mail[0] || "?").toUpperCase();
+  buildAccountMenu();
   renderFolders(folders);
   const inbox = folders.find(f => f.raw.toUpperCase() === "INBOX") || folders[0];
   if (inbox) openFolder(inbox);
+}
+
+/* ----------------------------------------------------------- multi-comptes */
+
+function buildAccountMenu() {
+  const menu = $("account-menu");
+  menu.innerHTML = "";
+  accounts().forEach((a) => {
+    const b = document.createElement("button");
+    b.innerHTML = (a.email === activeEmail ? "✓ " : "") + esc(a.email);
+    if (a.email === activeEmail) b.classList.add("acc-active");
+    b.onclick = (e) => {
+      e.stopPropagation();
+      hide(menu);
+      if (a.email !== activeEmail) switchAccount(a.email);
+    };
+    menu.appendChild(b);
+  });
+  const add = document.createElement("button");
+  add.textContent = "➕ Ajouter un compte";
+  add.onclick = (e) => { e.stopPropagation(); hide(menu); addAccount(); };
+  menu.appendChild(add);
+}
+
+async function switchAccount(email) {
+  closeReader();
+  currentFolder = null;
+  busy(true);
+  const ok = await tryActivate(email, false);
+  busy(false);
+  if (ok) toast("Compte actif : " + email);
+}
+
+function addAccount() {
+  // retour au formulaire vierge, sans toucher aux sessions existantes
+  hide($("main-screen"));
+  show($("login-screen"));
+  $("email").value = "";
+  $("password").value = "";
+  hide($("saved-pass-note"));
+  hide($("login-error"));
+  if (PROVIDERS.length) {
+    $("provider").value = PROVIDERS[0].id;
+    fillProviderFields(PROVIDERS[0]);
+  }
 }
 
 function renderFolders(folders) {
@@ -770,10 +900,20 @@ async function refreshAutoreplyBadge(settings) {
 /* ---------------------------------------------------------------- session */
 
 async function doLogout() {
-  const forget = confirm("Oublier aussi le compte enregistré sur ce PC ?\n(Annuler = garder la config, juste se déconnecter)");
+  const forget = confirm(
+    `Retirer aussi le compte ${activeEmail} de la liste sur ce navigateur ?\n` +
+    "(Annuler = garder le compte, juste fermer la session)");
   busy(true);
   await call("disconnect", forget);
   busy(false);
+  setOnline(false);
+  // s'il reste d'autres comptes, basculer sur le premier ; sinon formulaire
+  const rest = accounts().filter((a) => a.email !== activeEmail || !forget);
+  const next = rest.find((a) => a.email !== activeEmail);
+  if (next) {
+    switchAccount(next.email);
+    return;
+  }
   hide($("main-screen"));
   show($("login-screen"));
   $("password").value = "";
@@ -797,11 +937,11 @@ async function handleOauthReturn() {
     show(err);
     return false;
   }
-  TOKEN = token;
-  sessionStorage.setItem("bm_token", TOKEN);
-  lsSet(LS_CONFIG, { email, provider_id: "gmail", google_oauth: true,
-                     imap_host: "imap.gmail.com", imap_port: 993,
-                     smtp_host: "smtp.gmail.com", smtp_port: 465, smtp_ssl: true });
+  upsertAccount({ email, provider_id: "gmail", google_oauth: true,
+                  imap_host: "imap.gmail.com", imap_port: 993,
+                  smtp_host: "smtp.gmail.com", smtp_port: 465, smtp_ssl: true });
+  setActive(email);
+  setTokenFor(email, token);
   busy(true);
   const res = await call("list_folders");
   busy(false);
@@ -851,13 +991,22 @@ function bind() {
   $("s-ar-enabled").onchange = updateArFields;
   $("search").addEventListener("keydown", e => { if (e.key === "Enter") doSearch(); });
   $("btn-search-clear").onclick = () => { $("search").value = ""; openFolder(currentFolder); };
+  $("account-btn").onclick = (e) => {
+    e.stopPropagation();
+    buildAccountMenu();
+    $("account-menu").classList.toggle("hidden");
+  };
   bindDragDrop();
-  document.addEventListener("click", () => hide($("folder-menu")));
+  document.addEventListener("click", () => {
+    hide($("folder-menu"));
+    hide($("account-menu"));
+  });
   document.addEventListener("keydown", e => {
     if (e.key === "Escape") {
       hide($("compose-overlay"));
       hide($("settings-overlay"));
       hide($("folder-menu"));
+      hide($("account-menu"));
     }
   });
 }

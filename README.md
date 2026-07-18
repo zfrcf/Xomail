@@ -1,8 +1,20 @@
-# 📬 Boîte Mail en ligne (webmail)
+# 📬 Xomail
 
-Webmail autonome en Node.js : même interface que l'application de bureau
-Boîte Mail, avec de **vraies connexions IMAP/SMTP** assurées par le serveur
-(imapflow + nodemailer). Prêt pour GitHub → Vercel.
+Webmail autonome en Node.js : **vraies connexions IMAP/SMTP** (imapflow +
+nodemailer), **multi-comptes**, et pièces jointes envoyées en **liens
+Gofile** au lieu de fichiers. Prêt pour GitHub → Vercel.
+
+## Particularités
+
+- **Multi-comptes** : clique sur ton adresse en haut de la barre latérale →
+  liste des comptes, ✓ sur l'actif, « ➕ Ajouter un compte ». La bascule est
+  instantanée (un jeton de session par compte).
+- **Pièces jointes → liens Gofile** : tout fichier joint (bouton 📎 ou
+  glisser-déposer) est téléversé sur Gofile par le serveur, et le mail part
+  avec le **lien de téléchargement** dans le corps — plus jamais de rejet
+  Gmail `552 BlockedMessage` sur les .exe/.zip. Jeton facultatif
+  `GOFILE_API_TOKEN` (page profil gofile.io) pour rattacher les fichiers à
+  ton compte Gofile ; sans jeton, envoi en invité.
 
 ## Lancer en local
 
