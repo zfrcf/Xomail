@@ -397,8 +397,9 @@ router.post("/disconnect", handler(false, async (_s, _b, req) => {
 // --------------------------------------------------------------- OAuth Google
 
 function baseUrl(req) {
-  return process.env.APP_URL ||
-    `${req.get("x-forwarded-proto") || "http"}://${req.get("host")}`;
+  const url = process.env.APP_URL;
+  if (url) return url.replace(/\/$/, "");
+  return `${req.get("x-forwarded-proto") || "http"}://${req.get("host")}`;
 }
 
 router.get("/oauth/google/start", (req, res) => {
@@ -419,7 +420,7 @@ router.get("/oauth/google/start", (req, res) => {
 });
 
 router.get("/oauth/google/callback", async (req, res) => {
-  const fail = (msg) => res.redirect("/#oauth_error=" + encodeURIComponent(msg));
+  const fail = (msg) => res.redirect(baseUrl(req) + "/#oauth_error=" + encodeURIComponent(msg));
   try {
     if (req.query.error) return fail("Google a refusé : " + req.query.error);
     const state = openSealed(req.query.state);
