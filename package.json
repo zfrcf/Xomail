@@ -1,0 +1,18 @@
+{
+  "name": "boite-mail-webmail",
+  "version": "1.0.0",
+  "description": "Boîte Mail en ligne — webmail IMAP/SMTP (Express, imapflow, nodemailer)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.0",
+    "imapflow": "^1.0.164",
+    "mailparser": "^3.7.0",
+    "nodemailer": "^6.9.14"
+  }
+}
