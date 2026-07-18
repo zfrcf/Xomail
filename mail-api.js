@@ -397,8 +397,8 @@ router.post("/disconnect", handler(false, async (_s, _b, req) => {
 // --------------------------------------------------------------- OAuth Google
 
 function baseUrl(req) {
-  const proto = req.get("x-forwarded-proto") || req.protocol || "http";
-  return `${proto}://${req.get("host")}`;
+  return process.env.APP_URL ||
+    `${req.get("x-forwarded-proto") || "http"}://${req.get("host")}`;
 }
 
 router.get("/oauth/google/start", (req, res) => {
@@ -450,7 +450,13 @@ router.get("/oauth/google/callback", async (req, res) => {
     sessions.set(token, session);
     await listFolders(session);
     // jeton transmis dans le fragment (#…) : jamais envoyé au serveur ni journalisé
-    res.redirect("/#gm=" + encodeURIComponent(token) + "&em=" + encodeURIComponent(email));
+    res.redirect(
+    baseUrl(req) +
+    "/#gm=" +
+    encodeURIComponent(token) +
+    "&em=" +
+    encodeURIComponent(email)
+);
   } catch (error) {
     console.error("[mail] OAuth Google :", (error && error.message) || error);
     fail(friendly(error));
