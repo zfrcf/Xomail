@@ -390,12 +390,40 @@ const CPANEL_SMTP = process.env.CPANEL_SMTP || "mail.yeux.o2switch.net";
 
 const cpanelReady = () => !!(CPANEL_HOST && CPANEL_USER && CPANEL_TOKEN);
 
-router.post("/feature_flags", handler(false, async () => ({
-  ok: true,
-  create_address: cpanelReady(),
-  domain: CPANEL_DOMAIN,
-  imap_host: CPANEL_IMAP, smtp_host: CPANEL_SMTP,
-})));
+function cpanelBase() {
+  return /^https?:\/\//.test(CPANEL_HOST) ? CPANEL_HOST : "https://" + CPANEL_HOST;
+}
+
+async function cpanelGet(path) {
+  const res = await fetch(cpanelBase() + path, {
+    headers: { Authorization: `cpanel ${CPANEL_USER}:${CPANEL_TOKEN}` },
+  });
+  return res.json();
+}
+
+// domaines du compte cPanel sur lesquels on peut créer des adresses
+let _domCache = { list: null, at: 0 };
+async function cpanelDomains() {
+  if (_domCache.list && Date.now() - _domCache.at < 300000) return _domCache.list;
+  let list = [CPANEL_DOMAIN];
+  try {
+    const data = await cpanelGet("/execute/Email/list_domains");
+    if (data && data.status === 1 && Array.isArray(data.data) && data.data.length) {
+      // list_domains peut renvoyer des chaînes ou des objets {domain}
+      list = data.data.map((d) => (typeof d === "string" ? d : d.domain)).filter(Boolean);
+    }
+  } catch { /* réseau/cPanel indisponible : on garde le domaine par défaut */ }
+  _domCache = { list, at: Date.now() };
+  return list;
+}
+
+router.post("/feature_flags", handler(false, async () => {
+  const flags = { ok: true, create_address: cpanelReady(),
+                  domain: CPANEL_DOMAIN, imap_host: CPANEL_IMAP, smtp_host: CPANEL_SMTP,
+                  domains: [] };
+  if (cpanelReady()) flags.domains = await cpanelDomains();
+  return flags;
+}));
 
 router.post("/create_address", handler(false, async (_s, body) => {
   if (!cpanelReady()) {
@@ -403,15 +431,19 @@ router.post("/create_address", handler(false, async (_s, body) => {
   }
   const local = String(body.local || "").trim().toLowerCase();
   const password = String(body.password || "");
+  const domain = String(body.domain || CPANEL_DOMAIN).trim().toLowerCase();
   if (!/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/.test(local)) {
     return { ok: false, error: "Nom d'adresse invalide (lettres, chiffres, . _ - )." };
   }
   if (password.length < 8) {
     return { ok: false, error: "Mot de passe trop court (8 caractères minimum)." };
   }
-  const base = /^https?:\/\//.test(CPANEL_HOST) ? CPANEL_HOST : "https://" + CPANEL_HOST;
-  const url = `${base}/execute/Email/add_pop?` + new URLSearchParams({
-    email: local, domain: CPANEL_DOMAIN, password, quota: "0",
+  const allowed = await cpanelDomains();
+  if (!allowed.includes(domain)) {
+    return { ok: false, error: "Domaine non disponible sur ce compte : " + domain };
+  }
+  const url = `${cpanelBase()}/execute/Email/add_pop?` + new URLSearchParams({
+    email: local, domain, password, quota: "0",
   });
   const res = await fetch(url, {
     headers: { Authorization: `cpanel ${CPANEL_USER}:${CPANEL_TOKEN}` },
@@ -422,7 +454,7 @@ router.post("/create_address", handler(false, async (_s, body) => {
       || `cPanel a refusé (HTTP ${res.status})`;
     return { ok: false, error: err };
   }
-  return { ok: true, email: `${local}@${CPANEL_DOMAIN}`,
+  return { ok: true, email: `${local}@${domain}`,
            config: { provider_id: "xomad", imap_host: CPANEL_IMAP, imap_port: 993,
                      smtp_host: CPANEL_SMTP, smtp_port: 465, smtp_ssl: true } };
 }));

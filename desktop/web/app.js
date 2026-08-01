@@ -298,10 +298,17 @@ async function initCreateAddress() {
   const res = await rpc("feature_flags", {});
   if (!res.ok || !res.create_address) return;
   createFeature = res;
-  const dom = "@" + res.domain;
-  $("cca-domain").textContent = dom;
-  $("cca-domain2").textContent = dom;
-  $("cca-suffix").textContent = dom;
+  const domains = (res.domains && res.domains.length) ? res.domains : [res.domain];
+  const sel = $("cca-domain-sel");
+  sel.innerHTML = domains.map(d => `<option value="${esc(d)}">@${esc(d)}</option>`).join("");
+  if (domains.length > 1) {           // plusieurs domaines → menu déroulant
+    hide($("cca-suffix"));
+    show(sel);
+  } else {                            // un seul domaine → simple suffixe
+    $("cca-suffix").textContent = "@" + domains[0];
+    show($("cca-suffix"));
+    hide(sel);
+  }
   show($("btn-create-address"));
 }
 
@@ -322,8 +329,9 @@ async function submitCreateAddress() {
   if (!local) { err.textContent = "Choisis un nom d'adresse."; show(err); return; }
   if (p1.length < 8) { err.textContent = "Mot de passe : 8 caractères minimum."; show(err); return; }
   if (p1 !== p2) { err.textContent = "Les deux mots de passe ne correspondent pas."; show(err); return; }
+  const domain = $("cca-domain-sel").value || createFeature.domain;
   busy(true);
-  const res = await rpc("create_address", { local, password: p1 });
+  const res = await rpc("create_address", { local, password: p1, domain });
   busy(false);
   if (!res.ok) { err.textContent = "❌ " + res.error; show(err); return; }
   hide($("create-overlay"));

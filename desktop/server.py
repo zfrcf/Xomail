@@ -101,10 +101,44 @@ def _cpanel_ready():
     return bool(CPANEL_HOST and CPANEL_USER and CPANEL_TOKEN)
 
 
+def _cpanel_base():
+    return CPANEL_HOST if CPANEL_HOST.startswith(("http://", "https://")) \
+        else "https://" + CPANEL_HOST
+
+
+def _cpanel_get(path):
+    req = urllib.request.Request(_cpanel_base() + path,
+                                 headers={"Authorization":
+                                          f"cpanel {CPANEL_USER}:{CPANEL_TOKEN}"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read().decode())
+
+
+_dom_cache = {"list": None, "at": 0.0}
+
+
+def _cpanel_domains():
+    if _dom_cache["list"] and (time.time() - _dom_cache["at"]) < 300:
+        return _dom_cache["list"]
+    lst = [CPANEL_DOMAIN]
+    try:
+        data = _cpanel_get("/execute/Email/list_domains")
+        if data.get("status") == 1 and isinstance(data.get("data"), list) and data["data"]:
+            lst = [d if isinstance(d, str) else d.get("domain") for d in data["data"]]
+            lst = [d for d in lst if d]
+    except Exception:
+        pass
+    _dom_cache["list"], _dom_cache["at"] = lst, time.time()
+    return lst
+
+
 def api_feature_flags(_session, _body):
-    return {"ok": True, "create_address": _cpanel_ready(),
-            "domain": CPANEL_DOMAIN, "imap_host": CPANEL_IMAP,
-            "smtp_host": CPANEL_SMTP}
+    flags = {"ok": True, "create_address": _cpanel_ready(),
+             "domain": CPANEL_DOMAIN, "imap_host": CPANEL_IMAP,
+             "smtp_host": CPANEL_SMTP, "domains": []}
+    if _cpanel_ready():
+        flags["domains"] = _cpanel_domains()
+    return flags
 
 
 def api_create_address(_session, body):
@@ -112,15 +146,16 @@ def api_create_address(_session, body):
         return {"ok": False, "error": "Création d'adresses non configurée."}
     local = str(body.get("local", "")).strip().lower()
     password = str(body.get("password", ""))
+    domain = str(body.get("domain") or CPANEL_DOMAIN).strip().lower()
     if not _re.match(r"^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$", local):
         return {"ok": False, "error": "Nom d'adresse invalide (lettres, chiffres, . _ - )."}
     if len(password) < 8:
         return {"ok": False, "error": "Mot de passe trop court (8 caractères minimum)."}
-    base = CPANEL_HOST if CPANEL_HOST.startswith(("http://", "https://")) \
-        else "https://" + CPANEL_HOST
-    qs = urllib.parse.urlencode({"email": local, "domain": CPANEL_DOMAIN,
+    if domain not in _cpanel_domains():
+        return {"ok": False, "error": "Domaine non disponible sur ce compte : " + domain}
+    qs = urllib.parse.urlencode({"email": local, "domain": domain,
                                  "password": password, "quota": "0"})
-    req = urllib.request.Request(base + "/execute/Email/add_pop?" + qs,
+    req = urllib.request.Request(_cpanel_base() + "/execute/Email/add_pop?" + qs,
                                  headers={"Authorization":
                                           f"cpanel {CPANEL_USER}:{CPANEL_TOKEN}"})
     with urllib.request.urlopen(req, timeout=30) as resp:
@@ -128,7 +163,7 @@ def api_create_address(_session, body):
     if data.get("status") != 1:
         errs = ", ".join(data.get("errors") or []) or "cPanel a refusé la création"
         return {"ok": False, "error": errs}
-    return {"ok": True, "email": f"{local}@{CPANEL_DOMAIN}",
+    return {"ok": True, "email": f"{local}@{domain}",
             "config": {"provider_id": "xomad", "imap_host": CPANEL_IMAP,
                        "imap_port": 993, "smtp_host": CPANEL_SMTP,
                        "smtp_port": 465, "smtp_ssl": True}}
