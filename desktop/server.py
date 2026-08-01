@@ -86,6 +86,54 @@ def api_list_providers(_session, _body):
     return {"ok": True, "providers": PROVIDERS}
 
 
+# ---- Créer une adresse @xomad.fr via l'API cPanel d'o2switch (si configuré) ----
+CPANEL_HOST = os.environ.get("CPANEL_HOST", "")   # ex : yeux.o2switch.net:2083
+CPANEL_USER = os.environ.get("CPANEL_USER", "")
+CPANEL_TOKEN = os.environ.get("CPANEL_TOKEN", "")
+CPANEL_DOMAIN = os.environ.get("CPANEL_DOMAIN", "xomad.fr")
+CPANEL_IMAP = os.environ.get("CPANEL_IMAP", "mail.yeux.o2switch.net")
+CPANEL_SMTP = os.environ.get("CPANEL_SMTP", "mail.yeux.o2switch.net")
+
+import re as _re
+
+
+def _cpanel_ready():
+    return bool(CPANEL_HOST and CPANEL_USER and CPANEL_TOKEN)
+
+
+def api_feature_flags(_session, _body):
+    return {"ok": True, "create_address": _cpanel_ready(),
+            "domain": CPANEL_DOMAIN, "imap_host": CPANEL_IMAP,
+            "smtp_host": CPANEL_SMTP}
+
+
+def api_create_address(_session, body):
+    if not _cpanel_ready():
+        return {"ok": False, "error": "Création d'adresses non configurée."}
+    local = str(body.get("local", "")).strip().lower()
+    password = str(body.get("password", ""))
+    if not _re.match(r"^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$", local):
+        return {"ok": False, "error": "Nom d'adresse invalide (lettres, chiffres, . _ - )."}
+    if len(password) < 8:
+        return {"ok": False, "error": "Mot de passe trop court (8 caractères minimum)."}
+    base = CPANEL_HOST if CPANEL_HOST.startswith(("http://", "https://")) \
+        else "https://" + CPANEL_HOST
+    qs = urllib.parse.urlencode({"email": local, "domain": CPANEL_DOMAIN,
+                                 "password": password, "quota": "0"})
+    req = urllib.request.Request(base + "/execute/Email/add_pop?" + qs,
+                                 headers={"Authorization":
+                                          f"cpanel {CPANEL_USER}:{CPANEL_TOKEN}"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        data = json.loads(resp.read().decode())
+    if data.get("status") != 1:
+        errs = ", ".join(data.get("errors") or []) or "cPanel a refusé la création"
+        return {"ok": False, "error": errs}
+    return {"ok": True, "email": f"{local}@{CPANEL_DOMAIN}",
+            "config": {"provider_id": "xomad", "imap_host": CPANEL_IMAP,
+                       "imap_port": 993, "smtp_host": CPANEL_SMTP,
+                       "smtp_port": 465, "smtp_ssl": True}}
+
+
 def api_connect(_session, body):
     config = body.get("config") or {}
     if not config.get("email") or not config.get("imap_host") or not config.get("password"):
@@ -193,6 +241,8 @@ def api_save_draft(session, body):
 
 API = {
     "list_providers": (False, api_list_providers),
+    "feature_flags": (False, api_feature_flags),
+    "create_address": (False, api_create_address),
     "connect": (False, api_connect),
     "disconnect": (True, api_disconnect),
     "list_folders": (True, api_list_folders),

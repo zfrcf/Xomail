@@ -144,6 +144,22 @@ button:active { transform: scale(.98); }
 }
 .google-btn:hover { filter: brightness(.94); }
 
+.create-addr-btn {
+  width: 100%; margin-top: 12px;
+  background: transparent; color: var(--accent);
+  border: 1px dashed var(--accent); font-weight: 600; font-size: 14px;
+}
+.create-addr-btn:hover { background: rgba(79,142,247,.1); }
+.create-addr-btn b { font-weight: 700; }
+
+.addr-row { display: flex; align-items: stretch; }
+.addr-row input { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.addr-suffix {
+  display: flex; align-items: center; padding: 0 12px;
+  background: var(--bg3); border: 1px solid var(--border); border-left: none;
+  border-radius: 0 8px 8px 0; color: var(--muted); font-size: 14px; white-space: nowrap;
+}
+
 .note {
   font-size: 12px; color: var(--muted);
   background: var(--bg3); border-left: 3px solid var(--accent);

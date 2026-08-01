@@ -279,12 +279,66 @@ async function initLogin() {
   };
   if (PROVIDERS.length) fillProviderFields(PROVIDERS[0]);
 
+  initCreateAddress();  // affiche « Créer une adresse » si le serveur l'autorise
+
   // reprise automatique du compte actif (jeton d'onglet, sinon mot de passe
   // enregistré) ; sinon simple préremplissage du formulaire
   const acc = getAccount(activeEmail) || accounts()[0];
   if (acc) {
     prefillLogin(acc);
     await tryActivate(acc.email, true);
+  }
+}
+
+/* ----- Créer une adresse @xomad.fr (si le serveur l'autorise) ----- */
+
+let createFeature = null;   // {create_address, domain, imap_host, smtp_host}
+
+async function initCreateAddress() {
+  const res = await rpc("feature_flags", {});
+  if (!res.ok || !res.create_address) return;
+  createFeature = res;
+  const dom = "@" + res.domain;
+  $("cca-domain").textContent = dom;
+  $("cca-domain2").textContent = dom;
+  $("cca-suffix").textContent = dom;
+  show($("btn-create-address"));
+}
+
+function openCreateAddress() {
+  $("cca-local").value = "";
+  $("cca-pass").value = "";
+  $("cca-pass2").value = "";
+  hide($("cca-error"));
+  show($("create-overlay"));
+  $("cca-local").focus();
+}
+
+async function submitCreateAddress() {
+  const err = $("cca-error");
+  hide(err);
+  const local = $("cca-local").value.trim().toLowerCase();
+  const p1 = $("cca-pass").value, p2 = $("cca-pass2").value;
+  if (!local) { err.textContent = "Choisis un nom d'adresse."; show(err); return; }
+  if (p1.length < 8) { err.textContent = "Mot de passe : 8 caractères minimum."; show(err); return; }
+  if (p1 !== p2) { err.textContent = "Les deux mots de passe ne correspondent pas."; show(err); return; }
+  busy(true);
+  const res = await rpc("create_address", { local, password: p1 });
+  busy(false);
+  if (!res.ok) { err.textContent = "❌ " + res.error; show(err); return; }
+  hide($("create-overlay"));
+  toast("Adresse créée : " + res.email + " ✨");
+  // connecte directement la nouvelle boîte
+  const config = { ...res.config, email: res.email, password: p1 };
+  busy(true);
+  const conn = await call("connect", config, true, false);
+  busy(false);
+  if (conn.ok) { setOnline(true); enterMailbox(conn.email, conn.folders); }
+  else {
+    // la boîte existe mais la connexion immédiate a échoué (propagation) : on préremplit
+    prefillLogin({ ...config });
+    $("password").value = p1;
+    toast("Adresse créée. Clique sur « Se connecter ».");
   }
 }
 
@@ -962,6 +1016,9 @@ function bind() {
   $("btn-google").onclick = () => {
     window.location.href = "/api/mail/oauth/google/start";
   };
+  $("btn-create-address").onclick = openCreateAddress;
+  $("btn-create-close").onclick = () => hide($("create-overlay"));
+  $("btn-create-submit").onclick = submitCreateAddress;
   $("password").addEventListener("keydown", e => { if (e.key === "Enter") doConnect(); });
   $("btn-refresh").onclick = () => {
     if (!online) { busy(true); tryReconnect(false).then(() => busy(false)); return; }

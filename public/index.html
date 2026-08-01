@@ -51,7 +51,33 @@
       <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9.1 3.6l6.8-6.8C35.7 2.4 30.2 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.9 6.2C12.4 13.6 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 3-2.3 5.5-4.8 7.2l7.7 6c4.5-4.2 6.9-10.3 6.9-17.7z"/><path fill="#FBBC05" d="M10.5 28.6c-.5-1.5-.8-3-.8-4.6s.3-3.1.8-4.6l-7.9-6.2C.9 16.5 0 20.1 0 24s.9 7.5 2.6 10.8l7.9-6.2z"/><path fill="#34A853" d="M24 48c6.2 0 11.4-2 15.2-5.6l-7.7-6c-2.1 1.4-4.8 2.3-7.5 2.3-6.3 0-11.6-4.1-13.5-9.9l-7.9 6.2C6.5 42.6 14.6 48 24 48z"/></svg>
       Se connecter avec Google — mot de passe habituel
     </button>
+    <button id="btn-create-address" class="create-addr-btn hidden">✨ Créer une adresse <b id="cca-domain">@xomad.fr</b></button>
     <p id="login-error" class="error hidden"></p>
+  </div>
+</div>
+
+<!-- ============================== CRÉER UNE ADRESSE -->
+<div id="create-overlay" class="overlay hidden">
+  <div class="compose-card" style="width:440px">
+    <header>
+      <span>✨ Créer une adresse <span id="cca-domain2">@xomad.fr</span></span>
+      <button id="btn-create-close" class="ghost">✕</button>
+    </header>
+    <p class="note">Crée une vraie boîte mail sur ton domaine. Elle sera aussitôt
+      utilisable ici et depuis n'importe quel client mail.</p>
+    <label>Nom de l'adresse</label>
+    <div class="addr-row">
+      <input id="cca-local" placeholder="charliefleau" autocomplete="off">
+      <span id="cca-suffix" class="addr-suffix">@xomad.fr</span>
+    </div>
+    <label>Mot de passe de la nouvelle boîte (8 caractères min.)</label>
+    <input id="cca-pass" type="password" placeholder="••••••••">
+    <label>Confirme le mot de passe</label>
+    <input id="cca-pass2" type="password" placeholder="••••••••">
+    <p id="cca-error" class="error hidden"></p>
+    <footer>
+      <button id="btn-create-submit" class="primary" style="width:auto;margin:0">Créer &amp; connecter</button>
+    </footer>
   </div>
 </div>
 

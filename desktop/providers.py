@@ -66,6 +66,13 @@ PROVIDERS = [
         "note": "",
     },
     {
+        "id": "xomad",
+        "name": "xomad.fr",
+        "imap_host": "mail.yeux.o2switch.net", "imap_port": 993,
+        "smtp_host": "mail.yeux.o2switch.net", "smtp_port": 465, "smtp_ssl": True,
+        "note": "Adresses @xomad.fr (hébergement o2switch). Adresse complète + mot de passe.",
+    },
+    {
         "id": "custom",
         "name": "Personnalisé…",
         "imap_host": "", "imap_port": 993,

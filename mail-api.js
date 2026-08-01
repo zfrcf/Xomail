@@ -203,6 +203,9 @@ const PROVIDERS = [
     smtp_host: "smtp.laposte.net", smtp_port: 465, smtp_ssl: true, note: "" },
   { id: "ovh", name: "OVH", imap_host: "ssl0.ovh.net", imap_port: 993,
     smtp_host: "ssl0.ovh.net", smtp_port: 465, smtp_ssl: true, note: "" },
+  { id: "xomad", name: "xomad.fr", imap_host: "mail.yeux.o2switch.net", imap_port: 993,
+    smtp_host: "mail.yeux.o2switch.net", smtp_port: 465, smtp_ssl: true,
+    note: "Adresses @xomad.fr (hébergement o2switch). Utilise l'adresse complète et son mot de passe." },
   { id: "custom", name: "Personnalisé…", imap_host: "", imap_port: 993,
     smtp_host: "", smtp_port: 465, smtp_ssl: true,
     note: "Renseigne les serveurs IMAP et SMTP fournis par ton hébergeur." },
@@ -374,6 +377,55 @@ async function fetchFull(session, folder, uid) {
 // ---------------------------------------------------------------------------
 router.post("/list_providers", handler(false, async () =>
   ({ ok: true, providers: PROVIDERS })));
+
+// --------------------------------------------------- Créer une adresse @xomad.fr
+// Pilote l'API cPanel d'o2switch (Email/add_pop). Actif seulement si les
+// variables d'environnement cPanel sont renseignées.
+const CPANEL_HOST = process.env.CPANEL_HOST || "";   // ex : yeux.o2switch.net:2083
+const CPANEL_USER = process.env.CPANEL_USER || "";
+const CPANEL_TOKEN = process.env.CPANEL_TOKEN || "";
+const CPANEL_DOMAIN = process.env.CPANEL_DOMAIN || "xomad.fr";
+const CPANEL_IMAP = process.env.CPANEL_IMAP || "mail.yeux.o2switch.net";
+const CPANEL_SMTP = process.env.CPANEL_SMTP || "mail.yeux.o2switch.net";
+
+const cpanelReady = () => !!(CPANEL_HOST && CPANEL_USER && CPANEL_TOKEN);
+
+router.post("/feature_flags", handler(false, async () => ({
+  ok: true,
+  create_address: cpanelReady(),
+  domain: CPANEL_DOMAIN,
+  imap_host: CPANEL_IMAP, smtp_host: CPANEL_SMTP,
+})));
+
+router.post("/create_address", handler(false, async (_s, body) => {
+  if (!cpanelReady()) {
+    return { ok: false, error: "Création d'adresses non configurée sur ce serveur." };
+  }
+  const local = String(body.local || "").trim().toLowerCase();
+  const password = String(body.password || "");
+  if (!/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/.test(local)) {
+    return { ok: false, error: "Nom d'adresse invalide (lettres, chiffres, . _ - )." };
+  }
+  if (password.length < 8) {
+    return { ok: false, error: "Mot de passe trop court (8 caractères minimum)." };
+  }
+  const base = /^https?:\/\//.test(CPANEL_HOST) ? CPANEL_HOST : "https://" + CPANEL_HOST;
+  const url = `${base}/execute/Email/add_pop?` + new URLSearchParams({
+    email: local, domain: CPANEL_DOMAIN, password, quota: "0",
+  });
+  const res = await fetch(url, {
+    headers: { Authorization: `cpanel ${CPANEL_USER}:${CPANEL_TOKEN}` },
+  });
+  const data = await res.json().catch(() => null);
+  if (!data || data.status !== 1) {
+    const err = (data && data.errors && data.errors.join(", "))
+      || `cPanel a refusé (HTTP ${res.status})`;
+    return { ok: false, error: err };
+  }
+  return { ok: true, email: `${local}@${CPANEL_DOMAIN}`,
+           config: { provider_id: "xomad", imap_host: CPANEL_IMAP, imap_port: 993,
+                     smtp_host: CPANEL_SMTP, smtp_port: 465, smtp_ssl: true } };
+}));
 
 router.post("/connect", handler(false, async (_s, body) => {
   const config = body.config || {};

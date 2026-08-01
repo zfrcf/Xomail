@@ -27,7 +27,7 @@ def main():
             data=b"{}", headers={"Content-Type": "application/json"})
         import json
         data = json.loads(urllib.request.urlopen(req, timeout=5).read())
-        assert data["ok"] and len(data["providers"]) == 10
+        assert data["ok"] and len(data["providers"]) == 11
         print("SELFTEST OK")
         return
 
